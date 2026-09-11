@@ -1,5 +1,3 @@
-# SafeSpace AI - Mental Health Text Analysis
-# Backend Dependencies
 streamlit
 pandas==2.2.3
 numpy==2.1.3
@@ -7,30 +5,3 @@ scikit-learn==1.6.1
 xgboost==3.4.1
 joblib==1.5.3
 nltk
-
-# Web Framework
-Flask==3.0.0
-Flask-CORS==4.0.0
-python-dotenv==1.0.0
-
-numpy02:21 AM
-# Machine Learning & NLP
-
-# Database (optional - for storing analysis history)
-python-dateutil==2.8.2
-
-# Production Server
-gunicorn==21.2.0
-Werkzeug==3.0.1
-
-# Logging & Monitoring
-python-logging-loki==0.3.2  # Optional: For centralized logging
-
-# Security
-cryptography==41.0.7
-
-# Development (Optional)
-pytest==7.4.3
-pytest-cov==4.1.0
-black==23.12.1
-pylint==3.0.3
