@@ -4,6 +4,7 @@ numpy==2.1.3
 scikit-learn==1.6.1
 xgboost==3.4.1
 joblib==1.5.3
-deep-translator
-SpeechRecognition
+nltk==3.9.1
+deep-translator==1.11.4
+SpeechRecognition==3.14.3
 
