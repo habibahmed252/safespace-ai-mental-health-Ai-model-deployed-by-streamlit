@@ -15,7 +15,8 @@ import warnings
 from datetime import datetime
 
 import joblib
-import nltk  # Required because the saved model contains nltk.stem.PorterStemmer.
+import nltk
+from scipy.sparse import hstack, csr_matrix  # Required because the saved model contains nltk.stem.PorterStemmer.
 import streamlit as st
 
 warnings.filterwarnings("ignore")
@@ -282,7 +283,27 @@ def run_prediction(raw_text: str):
 
     # Never grammar-check or reject the user's writing. The trained vectorizer
     # simply receives the normalized text (or its English translation).
-    features = vectorizer.transform([english_text])
+    # The saved XGBoost model expects 20,002 features:
+    # 20,000 TF-IDF features + 2 numeric text features used during training.
+    # The original vectorizer intentionally exposes only the 20,000 TF-IDF columns.
+    tfidf_features = vectorizer.transform([english_text])
+
+    # These two features match the model's extra feature positions:
+    # f20000 = character count, f20001 = word count.
+    text_length = len(english_text)
+    word_count = len(re.findall(r"\b\w+\b", english_text, flags=re.UNICODE))
+
+    extra_features = csr_matrix([[text_length, word_count]], dtype=tfidf_features.dtype)
+    features = hstack([tfidf_features, extra_features], format="csr")
+
+    # Safety check so a future model/vectorizer mismatch gives a useful message.
+    expected_features = getattr(model, "n_features_in_", None)
+    if expected_features is not None and features.shape[1] != expected_features:
+        raise ValueError(
+            f"Model expects {expected_features} features, but the application created "
+            f"{features.shape[1]} features."
+        )
+
     probabilities = model.predict_proba(features)[0]
     encoded_prediction = int(model.predict(features)[0])
     prediction = str(label_encoder.inverse_transform([encoded_prediction])[0])
