@@ -1750,30 +1750,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-```
-
-### مهم جدًا قبل الـDeploy
-
-إنتِ **مش محتاجة تضيفي `from openai import OpenAI`** لأن الكود بتاعك أصلًا فيه:
-
-```python
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
-```
-
-وكمان الـAPI Key **مش بيتحط في الكود**. طالما موجود عندك في Streamlit Secrets بالشكل ده:
-
-```toml
-OPENAI_API_KEY = "sk-xxxxxxxxxxxxxxxx"
-```
-
-يبقى تمام.
-
-بعد الـDeploy، المفروض تشوفي في الكارت اليمين:
-
-**🤖 AI Helper — Here for You**
-**💬 Open AI Chat**
-
-تضغطي **Open AI Chat** → يظهر مربع المحادثة → تكتبي → الـAI يرد → وتكملي معاه في نفس الـchat.
+يبقى تمام
