@@ -9,13 +9,11 @@ writing are accepted as normal input.
 """
 
 import html
-import io
 import re
 import warnings
 from datetime import datetime
 
 import joblib
-import nltk
 from scipy.sparse import hstack, csr_matrix  # Required because the saved model contains nltk.stem.PorterStemmer.
 import streamlit as st
 
@@ -25,12 +23,6 @@ try:
     from deep_translator import GoogleTranslator
 except Exception:
     GoogleTranslator = None
-
-try:
-    import speech_recognition as sr
-except Exception:
-    sr = None
-
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIG
@@ -52,7 +44,6 @@ for key, default in {
     "text_input": "",
     "results": None,
     "analysis_history": [],
-    "voice_transcript": "",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -68,9 +59,8 @@ UI = {
         "subtitle": "Understanding your unspoken words",
         "creator": "Designed & developed by Eng. Habiba Ahmed Talat",
         "about": "About SafeSpace AI",
-        "about_desc": "SafeSpace AI uses an English-trained NLP classifier to estimate which of seven categories is most consistent with the submitted text. The output is a model prediction for reflection and screening-style analysis — not a clinical diagnosis.",
-        "accuracy": "Model Accuracy: 94.2%",
-        "model_section": "Model Information",
+        "about_desc": "SafeSpace AI is an AI-powered text analysis tool designed to help you reflect on the emotional patterns expressed in your writing. Results are for informational support only and are not a clinical diagnosis.",
+        "model_section": "About the Model",
         "model_arch": "Model architecture",
         "features": "Feature extraction",
         "classes": "Prediction classes",
@@ -78,18 +68,12 @@ UI = {
         "input": "Share Your Thoughts",
         "input_hint": "Write naturally in English or Arabic. Spelling mistakes, slang, informal wording and punctuation are accepted.",
         "placeholder": "Express your thoughts freely here...",
-        "voice": "Voice input",
-        "voice_hint": "Speak in English or Arabic and convert your voice into text.",
-        "transcribe": "Convert voice to text",
         "analyze": "Analyze Text",
         "clear": "Clear",
-        "empty": "Please write something or record your voice first.",
+        "empty": "Please write something first.",
         "processing": "Analyzing your text...",
         "translation": "Arabic detected — translating the message for the English-trained model.",
         "translation_error": "Arabic translation is temporarily unavailable. You can still use English input, or try again in a moment.",
-        "voice_missing": "Voice recognition is unavailable because its dependency is not installed.",
-        "voice_unknown": "I couldn't understand the recording. Please try again.",
-        "voice_network": "Speech recognition could not reach its recognition service.",
         "detected": "Detected Mental State",
         "confidence": "Confidence",
         "breakdown": "Class Probabilities Breakdown",
@@ -115,9 +99,8 @@ UI = {
         "subtitle": "فهم ما بين السطور",
         "creator": "تصميم وتطوير م. حبيبة أحمد طلعت",
         "about": "عن SafeSpace AI",
-        "about_desc": "يستخدم SafeSpace AI نموذجًا لمعالجة اللغة الطبيعية مدرّبًا باللغة الإنجليزية لتقدير الفئة الأكثر توافقًا مع النص من بين سبع فئات. النتيجة توقع من النموذج لأغراض الفهم والتحليل وليست تشخيصًا طبيًا.",
-        "accuracy": "دقة النموذج: 94.2%",
-        "model_section": "معلومات النموذج",
+        "about_desc": "SafeSpace AI أداة لتحليل النصوص بالذكاء الاصطناعي، وهدفها مساعدتك على فهم الأنماط العاطفية الظاهرة في كتابتك. النتائج إرشادية فقط وليست تشخيصًا طبيًا.",
+        "model_section": "عن النموذج",
         "model_arch": "بنية النموذج",
         "features": "استخراج الخصائص",
         "classes": "فئات التوقع",
@@ -125,18 +108,12 @@ UI = {
         "input": "شاركي أفكارك",
         "input_hint": "اكتبي بطريقتك الطبيعية بالعربي أو بالإنجليزي. الأخطاء الإملائية والاختصارات والكتابة العامية وعلامات الترقيم مسموحة.",
         "placeholder": "عبّري عن أفكارك ومشاعرك هنا بحرية...",
-        "voice": "الإدخال الصوتي",
-        "voice_hint": "اتكلمي بالعربي أو بالإنجليزي وحوّلي صوتك إلى نص.",
-        "transcribe": "تحويل الصوت إلى نص",
         "analyze": "تحليل النص",
         "clear": "مسح",
-        "empty": "اكتبي نصًا أو سجلي صوتك أولًا.",
+        "empty": "اكتبي نصًا أولًا.",
         "processing": "جاري تحليل النص...",
         "translation": "تم اكتشاف العربية — يتم ترجمة الرسالة للنموذج المدرب بالإنجليزية.",
         "translation_error": "ترجمة العربية غير متاحة مؤقتًا. جرّبي مرة أخرى بعد قليل أو استخدمي الإنجليزية.",
-        "voice_missing": "الإدخال الصوتي غير متاح لأن مكوّن التعرف على الكلام غير مثبت.",
-        "voice_unknown": "لم أستطع فهم التسجيل. جرّبي مرة أخرى.",
-        "voice_network": "تعذر الوصول إلى خدمة التعرف على الكلام.",
         "detected": "الحالة المتوقعة",
         "confidence": "درجة الثقة",
         "breakdown": "توزيع احتمالات الفئات",
@@ -233,38 +210,6 @@ def translate_if_needed(text: str):
         return None, False
     translated = GoogleTranslator(source="auto", target="en").translate(text)
     return normalize_user_text(translated), True
-
-
-def speech_to_text(audio_bytes: bytes):
-    if sr is None:
-        return None, "missing"
-    try:
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
-            audio = recognizer.record(source)
-
-        # Try both languages and keep the stronger recognized result.
-        candidates = []
-        for locale in ("en-US", "ar-EG"):
-            try:
-                result = recognizer.recognize_google(audio, language=locale, show_all=True)
-                if isinstance(result, dict):
-                    for alt in result.get("alternative", []):
-                        transcript = alt.get("transcript", "").strip()
-                        if transcript:
-                            candidates.append((float(alt.get("confidence", 0)), transcript))
-                elif isinstance(result, str) and result.strip():
-                    candidates.append((0.0, result.strip()))
-            except sr.UnknownValueError:
-                continue
-            except sr.RequestError:
-                return None, "network"
-
-        if not candidates:
-            return None, "unknown"
-        return max(candidates, key=lambda x: x[0])[1], None
-    except Exception:
-        return None, "unknown"
 
 
 def run_prediction(raw_text: str):
@@ -381,7 +326,6 @@ h1,h2,h3,h4 {{font-family:'Playfair Display',serif !important; color:var(--navy)
 .section-sub {{color:var(--muted);font-size:12px;line-height:1.55;margin-bottom:10px;}}
 .about-title {{font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px;}}
 .about-text {{color:var(--text);opacity:.88;font-size:13px;line-height:1.6;}}
-.metric-pill {{display:inline-flex;background:linear-gradient(135deg,#2B9DB8,#5BCBD9);color:white;padding:10px 15px;border-radius:12px;font-size:12px;font-weight:800;}}
 .model-grid {{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}}
 .model-item {{background:var(--surface2);border:1px solid var(--line);border-radius:13px;padding:13px;}}
 .model-label {{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}}
@@ -391,8 +335,6 @@ div[data-testid="stTextArea"] textarea::placeholder {{color:var(--muted) !import
 .stButton > button, .stLinkButton > a {{border-radius:11px !important;min-height:43px !important;font-weight:800 !important;}}
 .stButton > button[kind="primary"] {{background:#0B315C !important;color:#fff !important;}}
 .stButton > button:not([kind="primary"]), .stLinkButton > a {{background:var(--surface) !important;color:var(--text) !important;border-color:var(--line) !important;}}
-.voice-box {{background:var(--accent-bg);border:1px solid var(--line);border-radius:13px;padding:11px;margin:10px 0;}}
-.voice-caption {{color:var(--muted);font-size:12px;line-height:1.5;}}
 .result-card {{background:linear-gradient(145deg,#EFFBFD,#E7F7FB);border:1px solid #D4EAF0;border-radius:15px;padding:18px;text-align:center;}}
 .result-label {{font-size:12px;color:#617486;}}
 .result-value {{font-size:30px;font-weight:800;color:#071A35;margin-top:4px;}}
@@ -413,6 +355,7 @@ div[data-testid="stTextArea"] textarea::placeholder {{color:var(--muted) !import
 .dev-card {{background:linear-gradient(135deg,#0D3158,#17577A);color:#fff;border-radius:18px;padding:18px 20px;margin-top:16px;box-shadow:0 12px 30px rgba(13,49,88,.2);}}
 .dev-card * {{color:#fff !important;}}
 .footer {{text-align:center;color:var(--muted);font-size:11px;padding:18px 0 4px;}}
+details[data-testid="stExpander"] {{background:var(--surface);border:1px solid var(--line);border-radius:15px;}}
 @media(max-width:900px) {{.hero h1{{font-size:42px}}.model-grid{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:520px) {{.model-grid{{grid-template-columns:1fr}}}}
 </style>
@@ -450,81 +393,68 @@ st.markdown(
 # ABOUT
 # -----------------------------------------------------------------------------
 st.markdown(
-    f'<div dir="{direction}" class="card"><div class="about-title">{esc(T["about"])}</div><div class="about-text">{esc(T["about_desc"])}</div><div style="margin-top:12px"><span class="metric-pill">{esc(T["accuracy"])}</span></div></div>',
+    f'<div dir="{direction}" class="card"><div class="about-title">{esc(T["about"])}</div><div class="about-text">{esc(T["about_desc"])}</div></div>',
     unsafe_allow_html=True,
 )
 
 
 # -----------------------------------------------------------------------------
-# MODEL INFORMATION — SEPARATE, CLEAN SECTION
+# MODEL INFORMATION — DEDICATED COLLAPSED SECTION
 # -----------------------------------------------------------------------------
-st.markdown(f'<div dir="{direction}" class="section-title">{esc(T["model_section"])}</div>', unsafe_allow_html=True)
-st.markdown(
-    f'''<div dir="{direction}" class="card" style="padding:14px"><div class="model-grid">
-    <div class="model-item"><div class="model-label">{esc(T["model_arch"])}</div><div class="model-value">XGBoost Classifier</div></div>
-    <div class="model-item"><div class="model-label">{esc(T["features"])}</div><div class="model-value">TF-IDF · 20,000 features</div></div>
-    <div class="model-item"><div class="model-label">{esc(T["classes"])}</div><div class="model-value">7 categories</div></div>
-    <div class="model-item"><div class="model-label">{esc(T["language"])}</div><div class="model-value">English</div></div>
-    </div></div>''',
-    unsafe_allow_html=True,
-)
+with st.expander(T["model_section"], expanded=False):
+    model_pack = load_model()
+    model = model_pack["model"]
+    vectorizer = model_pack["vectorizer"]
+    encoder = model_pack["label_encoder"]
+    model_params = model.get_params()
+    classes = list(encoder.classes_)
+
+    st.markdown(
+        f"""<div dir="{direction}" class="card" style="margin:0;padding:16px">
+        <div class="model-grid">
+          <div class="model-item"><div class="model-label">Model</div><div class="model-value">XGBoost Classifier</div></div>
+          <div class="model-item"><div class="model-label">Feature extractor</div><div class="model-value">TF-IDF / {type(vectorizer).__name__}</div></div>
+          <div class="model-item"><div class="model-label">TF-IDF features</div><div class="model-value">{len(vectorizer.vocabulary_):,}</div></div>
+          <div class="model-item"><div class="model-label">Input features</div><div class="model-value">{getattr(model, 'n_features_in_', 'N/A')}</div></div>
+          <div class="model-item"><div class="model-label">Prediction classes</div><div class="model-value">{len(classes)} categories</div></div>
+          <div class="model-item"><div class="model-label">Training language</div><div class="model-value">English</div></div>
+          <div class="model-item"><div class="model-label">N-gram range</div><div class="model-value">{esc(vectorizer.ngram_range)}</div></div>
+          <div class="model-item"><div class="model-label">Max features</div><div class="model-value">{esc(vectorizer.max_features)}</div></div>
+        </div>
+        <div style="margin-top:14px;font-weight:800;color:var(--navy)">Prediction categories</div>
+        <div style="margin-top:8px;color:var(--text);line-height:1.8;font-size:13px">{esc(' · '.join(classes))}</div>
+        <div style="margin-top:14px;font-weight:800;color:var(--navy)">Model input construction</div>
+        <div style="margin-top:7px;color:var(--text);font-size:13px;line-height:1.6">20,000 TF-IDF features + character count + word count = 20,002 input features.</div>
+        <div style="margin-top:14px;font-weight:800;color:var(--navy)">Key XGBoost settings</div>
+        <div style="margin-top:7px;color:var(--text);font-size:12px;line-height:1.7">n_estimators: {esc(model_params.get('n_estimators'))} · max_depth: {esc(model_params.get('max_depth'))} · learning_rate: {esc(model_params.get('learning_rate'))} · subsample: {esc(model_params.get('subsample'))} · colsample_bytree: {esc(model_params.get('colsample_bytree'))}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 # -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------
+def clear_input():
+    st.session_state.text_input = ""
+    st.session_state.results = None
+
+
 left, right = st.columns([1.7, 1.0], gap="large")
 
 with left:
     st.markdown(f'<div dir="{direction}" class="section-title">{esc(T["input"])}</div>', unsafe_allow_html=True)
     st.markdown(f'<div dir="{direction}" class="section-sub">{esc(T["input_hint"])}</div>', unsafe_allow_html=True)
-
-    st.text_area(
-        "Text",
-        placeholder=T["placeholder"],
-        height=165,
-        label_visibility="collapsed",
-        key="text_input",
-    )
-
-    st.markdown(f'<div dir="{direction}" class="voice-box"><div class="voice-caption"><b>{esc(T["voice"])}</b> · {esc(T["voice_hint"])}</div></div>', unsafe_allow_html=True)
-    audio = st.audio_input(T["voice"])
+    st.text_area("Text", placeholder=T["placeholder"], height=165, label_visibility="collapsed", key="text_input")
 
     b1, b2 = st.columns([1.35, 1])
     with b1:
-        transcribe = st.button(T["transcribe"], use_container_width=True)
+        analyze = st.button(T["analyze"], use_container_width=True, type="primary")
     with b2:
-        clear = st.button(T["clear"], use_container_width=True)
-
-    if clear:
-        st.session_state.text_input = ""
-        st.session_state.voice_transcript = ""
-        st.session_state.results = None
-        st.rerun()
-
-    if transcribe:
-        if audio is None:
-            st.warning(T["empty"])
-        else:
-            transcript, error = speech_to_text(audio.getvalue())
-            if error == "missing":
-                st.error(T["voice_missing"])
-            elif error == "network":
-                st.error(T["voice_network"])
-            elif error:
-                st.warning(T["voice_unknown"])
-            else:
-                st.session_state.voice_transcript = transcript
-                st.session_state.text_input = transcript
-                st.rerun()
-
-    if st.session_state.voice_transcript:
-        st.caption(st.session_state.voice_transcript)
-
-    analyze = st.button(T["analyze"], use_container_width=True, type="primary")
+        st.button(T["clear"], use_container_width=True, on_click=clear_input)
 
 with right:
-    starter = "Write a thought or use your microphone to begin." if lang == "en" else "اكتبي فكرة أو استخدمي الميكروفون للبدء."
+    starter = "Write a thought to begin your analysis." if lang == "en" else "اكتبي فكرة وابدئي التحليل."
     st.markdown(f'<div dir="{direction}" class="ai-card" style="min-height:205px"><div class="ai-title">💙 {esc(T["response"])}</div><div class="ai-copy">{esc(starter)}</div></div>', unsafe_allow_html=True)
 
 
