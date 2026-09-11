@@ -31,6 +31,8 @@ for key, default in {
     "results": None,
     "analysis_history": [],
     "support_response": None,
+    "show_ai_chat": False,
+    "ai_messages": [],
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -58,6 +60,13 @@ UI = {
         "breakdown": "Class Probabilities Breakdown",
         "response": "AI Support",
         "response_wait": "Your supportive AI response will appear here after analysis.",
+        "helper_title": "Your AI Helper",
+        "helper_intro": "I'm here with you. Tell me what's bothering you, and we can talk about it.",
+        "helper_open": "💬 Open Your AI Helper",
+        "helper_close": "✕ Close AI Helper",
+        "helper_placeholder": "Tell me what's on your mind...",
+        "helper_welcome": "Hi. I'm here to listen. Tell me what's bothering you.",
+        "helper_thinking": "Thinking...",
         "guidance": "What may help",
         "selfcare": "Practical next steps",
         "sources": "Evidence-based guidance",
@@ -95,8 +104,15 @@ UI = {
         "detected": "الحالة المتوقعة",
         "confidence": "درجة الثقة",
         "breakdown": "توزيع احتمالات الفئات",
-        "response": "AI Support",
+        "response": "دعم بالذكاء الاصطناعي",
         "response_wait": "رد داعم بالذكاء الاصطناعي هيظهر هنا بعد التحليل.",
+        "helper_title": "مساعدك بالذكاء الاصطناعي",
+        "helper_intro": "أنا هنا معاكي. احكيلي إيه اللي مضايقك ونقدر نتكلم فيه سوا.",
+        "helper_open": "💬 افتحي مساعدك AI",
+        "helper_close": "✕ اقفلي مساعد AI",
+        "helper_placeholder": "احكيلي إيه اللي على بالك...",
+        "helper_welcome": "أهلًا بيكي. أنا هنا أسمعك. احكيلي إيه اللي مضايقك.",
+        "helper_thinking": "بفكر...",
         "guidance": "إيه ممكن يساعد",
         "selfcare": "خطوات عملية",
         "sources": "إرشادات مبنية على مصادر موثوقة",
@@ -289,6 +305,45 @@ def generate_ai_support(user_text: str, prediction: str, lang: str):
         return None
 
 
+
+def get_ai_chat_response(messages, lang):
+    key = get_openai_key()
+
+    if OpenAI is None:
+        return None, "OpenAI package is not installed."
+    if not key:
+        return None, "OPENAI_API_KEY is missing from Streamlit Secrets."
+
+    try:
+        client = OpenAI(api_key=key)
+        language_instruction = (
+            "Respond naturally in Arabic/Egyptian Arabic."
+            if lang == "ar"
+            else "Respond naturally in English."
+        )
+        instructions = f"""
+You are SafeSpace AI's AI Helper, a supportive conversational companion inside a mental-health support application.
+{language_instruction}
+Listen carefully, be warm, calm and non-judgmental, and keep the conversation natural.
+Do not diagnose mental illnesses, do not claim certainty from the user's messages, do not provide medication instructions, and do not pretend to be a doctor or therapist.
+If the user expresses immediate risk of self-harm or suicide, prioritize immediate human support, emergency services, and staying with a trusted person.
+Keep replies reasonably concise and respond directly to what the user says.
+"""
+        # Keep the visible conversation, but send only the latest messages to avoid oversized requests.
+        recent_messages = messages[-12:]
+        response = client.responses.create(
+            model="gpt-5.6-luna",
+            instructions=instructions,
+            input=recent_messages,
+            max_output_tokens=500,
+        )
+        reply = getattr(response, "output_text", "")
+        if not reply:
+            return None, "The AI returned an empty response."
+        return reply.strip(), None
+    except Exception as exc:
+        return None, str(exc)
+
 def save_history(text, result):
     st.session_state.analysis_history.append({
         "text": text,
@@ -417,6 +472,36 @@ with left:
 
 with right:
     st.html(f'<div dir="{direction}" class="ai-card" style="min-height:230px"><div class="chat-icon">💬</div><div class="ai-title">{esc(T["response"])}</div><div class="ai-copy">{esc(T["response_wait"])}</div></div>')
+    st.html(f'<div dir="{direction}" class="section-title" style="margin-top:12px">{esc(T["helper_title"])}</div>')
+    st.html(f'<div dir="{direction}" class="section-sub">{esc(T["helper_intro"])}</div>')
+    if st.button(T["helper_close"] if st.session_state.show_ai_chat else T["helper_open"], use_container_width=True, key="ai_helper_btn"):
+        st.session_state.show_ai_chat = not st.session_state.show_ai_chat
+
+    if st.session_state.show_ai_chat:
+        st.html(f'<div dir="{direction}" class="ai-card" style="padding:16px">')
+        if not st.session_state.ai_messages:
+            st.session_state.ai_messages.append({"role": "assistant", "content": T["helper_welcome"]})
+        for message in st.session_state.ai_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        user_message = st.chat_input(T["helper_placeholder"], key="ai_chat_input")
+        st.html('</div>')
+        if user_message:
+            user_message = normalize_user_text(user_message)
+            if user_message:
+                st.session_state.ai_messages.append({"role": "user", "content": user_message})
+                with st.chat_message("user"):
+                    st.markdown(user_message)
+                with st.chat_message("assistant"):
+                    with st.spinner(T["helper_thinking"]):
+                        ai_reply, ai_error = get_ai_chat_response(st.session_state.ai_messages, lang)
+                    if ai_reply:
+                        st.markdown(ai_reply)
+                        st.session_state.ai_messages.append({"role": "assistant", "content": ai_reply})
+                    elif "OPENAI_API_KEY" in str(ai_error):
+                        st.error("OPENAI_API_KEY is missing from Streamlit Secrets.")
+                    else:
+                        st.error(T["ai_unavailable"])
 
 # ---------------- ANALYSIS ----------------
 if analyze:
