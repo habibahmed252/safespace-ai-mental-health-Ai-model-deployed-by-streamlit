@@ -1,4 +1,3 @@
-```python
 """SafeSpace AI — bilingual mental-health text analysis app."""
 
 import html
