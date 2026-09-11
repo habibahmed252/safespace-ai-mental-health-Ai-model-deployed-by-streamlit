@@ -107,12 +107,12 @@ UI = {
         "response": "دعم بالذكاء الاصطناعي",
         "response_wait": "رد داعم بالذكاء الاصطناعي هيظهر هنا بعد التحليل.",
         "helper_title": "مساعدك بالذكاء الاصطناعي",
-        "helper_intro": "أنا هنا أسمعك. احكيلي إيه اللي مضايقك ونقدر نتكلم فيه سوا.",
+        "helper_intro": "أنا هنا للاستماع. يمكننا التحدث عن أي شيء يزعجك.",
         "helper_open": "افتح مساعدك AI",
         "helper_close": "رجوع للصفحة الرئيسية",
-        "helper_placeholder": "احكيلي إيه اللي على بالك...",
-        "helper_welcome": "أهلًا. أنا هنا أسمعك. احكيلي إيه اللي مضايقك.",
-        "helper_thinking": "بفكر...",
+        "helper_placeholder": "ما الذي يشغل بالك؟",
+        "helper_welcome": "أهلًا. أنا هنا للاستماع. يمكننا التحدث عما يزعجك.",
+        "helper_thinking": "جاري التفكير...",
         "guidance": "إيه ممكن يساعد",
         "selfcare": "خطوات عملية",
         "sources": "إرشادات مبنية على مصادر موثوقة",
@@ -327,7 +327,7 @@ You are SafeSpace AI's AI Helper, a supportive conversational companion inside a
 Listen carefully, be warm, calm and non-judgmental, and keep the conversation natural. Use neutral language and do not speak as a woman or assume the user is a woman.
 Do not diagnose mental illnesses, do not claim certainty from the user's messages, do not provide medication instructions, and do not pretend to be a doctor or therapist.
 If the user expresses immediate risk of self-harm or suicide, prioritize immediate human support, emergency services, and staying with a trusted person.
-Keep replies reasonably concise and respond directly to what the user says.
+Keep replies reasonably concise and respond directly to what the user says. Do not use emojis. When speaking Arabic, avoid gendered forms when addressing the user; use neutral wording that works for any user.
 """
         # Keep the visible conversation, but send only the latest messages to avoid oversized requests.
         recent_messages = messages[-12:]
@@ -361,6 +361,7 @@ def esc(value):
 lang = st.session_state.language
 T = UI[lang]
 dark = st.session_state.theme == "dark"
+direction = "rtl" if lang == "ar" else "ltr"
 if dark:
     colors = {"bg":"#070D16","surface":"#0D1726","surface2":"#111F32","input":"#0A1422","text":"#F4F8FC","muted":"#9EADBF","line":"#253A52","navy":"#FFFFFF","accent_bg":"#10263A"}
 else:
@@ -457,7 +458,6 @@ with c3:
         st.rerun()
     st.html('</div>')
 
-direction="rtl" if lang=="ar" else "ltr"
 st.html(f'<div dir="{direction}" class="hero"><h1>SafeSpace AI</h1><div class="hero-sub">{esc(T["subtitle"])}</div><div class="creator-name">{esc(T["creator"])}</div></div>')
 st.html(f'<div dir="{direction}" class="card"><div class="about-title">{esc(T["about"])}</div><div class="about-text">{esc(T["about_desc"])}</div></div>')
 
