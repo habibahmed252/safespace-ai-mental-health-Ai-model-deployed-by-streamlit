@@ -7,4 +7,6 @@ joblib==1.5.3
 nltk==3.9.1
 deep-translator==1.11.4
 SpeechRecognition==3.14.3
+scipy>=1.11
+openai>=1.99.0
 
