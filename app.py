@@ -61,9 +61,9 @@ UI = {
         "response": "AI Support",
         "response_wait": "Your supportive AI response will appear here after analysis.",
         "helper_title": "Your AI Helper",
-        "helper_intro": "I'm here with you. Tell me what's bothering you, and we can talk about it.",
-        "helper_open": "💬 Open Your AI Helper",
-        "helper_close": "✕ Close AI Helper",
+        "helper_intro": "I'm here to listen. Tell me what's bothering you, and we can talk about it.",
+        "helper_open": "Open Your AI Helper",
+        "helper_close": "Back to Home",
         "helper_placeholder": "Tell me what's on your mind...",
         "helper_welcome": "Hi. I'm here to listen. Tell me what's bothering you.",
         "helper_thinking": "Thinking...",
@@ -107,11 +107,11 @@ UI = {
         "response": "دعم بالذكاء الاصطناعي",
         "response_wait": "رد داعم بالذكاء الاصطناعي هيظهر هنا بعد التحليل.",
         "helper_title": "مساعدك بالذكاء الاصطناعي",
-        "helper_intro": "أنا هنا معاكي. احكيلي إيه اللي مضايقك ونقدر نتكلم فيه سوا.",
-        "helper_open": "💬 افتحي مساعدك AI",
-        "helper_close": "✕ اقفلي مساعد AI",
+        "helper_intro": "أنا هنا أسمعك. احكيلي إيه اللي مضايقك ونقدر نتكلم فيه سوا.",
+        "helper_open": "افتح مساعدك AI",
+        "helper_close": "رجوع للصفحة الرئيسية",
         "helper_placeholder": "احكيلي إيه اللي على بالك...",
-        "helper_welcome": "أهلًا بيكي. أنا هنا أسمعك. احكيلي إيه اللي مضايقك.",
+        "helper_welcome": "أهلًا. أنا هنا أسمعك. احكيلي إيه اللي مضايقك.",
         "helper_thinking": "بفكر...",
         "guidance": "إيه ممكن يساعد",
         "selfcare": "خطوات عملية",
@@ -324,7 +324,7 @@ def get_ai_chat_response(messages, lang):
         instructions = f"""
 You are SafeSpace AI's AI Helper, a supportive conversational companion inside a mental-health support application.
 {language_instruction}
-Listen carefully, be warm, calm and non-judgmental, and keep the conversation natural.
+Listen carefully, be warm, calm and non-judgmental, and keep the conversation natural. Use neutral language and do not speak as a woman or assume the user is a woman.
 Do not diagnose mental illnesses, do not claim certainty from the user's messages, do not provide medication instructions, and do not pretend to be a doctor or therapist.
 If the user expresses immediate risk of self-harm or suicide, prioritize immediate human support, emergency services, and staying with a trusted person.
 Keep replies reasonably concise and respond directly to what the user says.
@@ -391,6 +391,53 @@ div[data-testid="stTextArea"] textarea{{background:var(--input) !important;color
 @media(max-width:900px){{.hero h1{{font-size:42px}}.model-grid{{grid-template-columns:1fr 1fr}}}} @media(max-width:520px){{.model-grid{{grid-template-columns:1fr}}}}
 </style>
 """)
+
+# ---------------- AI CHAT PAGE ----------------
+if st.session_state.show_ai_chat:
+    st.html(f'<div class="topbar">{esc(T["disclaimer"])}</div>')
+    chat_head_l, chat_head_r = st.columns([5, 1])
+    with chat_head_l:
+        st.html(f'<div dir="{direction}" class="brand" style="margin-top:8px">SafeSpace AI · {esc(T["helper_title"])}</div>')
+    with chat_head_r:
+        if st.button(T["helper_close"], use_container_width=True, key="ai_chat_back"):
+            st.session_state.show_ai_chat = False
+            st.rerun()
+
+    st.html(f'<div dir="{direction}" class="hero" style="margin-top:24px"><h1 style="font-size:42px">{esc(T["helper_title"])}</h1><div class="hero-sub">{esc(T["helper_intro"])}</div></div>')
+
+    # Hide the default chat avatars so the conversation stays clean and contains no emoji icons.
+    st.html("""<style>
+    [data-testid="stChatMessageAvatar"] { display: none !important; }
+    [data-testid="stChatMessage"] { padding-left: 0 !important; }
+    </style>""")
+
+    if not st.session_state.ai_messages:
+        st.session_state.ai_messages.append({"role": "assistant", "content": T["helper_welcome"]})
+
+    chat_box = st.container()
+    with chat_box:
+        for message in st.session_state.ai_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    user_message = st.chat_input(T["helper_placeholder"], key="ai_chat_input_full")
+    if user_message:
+        user_message = normalize_user_text(user_message)
+        if user_message:
+            st.session_state.ai_messages.append({"role": "user", "content": user_message})
+            with st.chat_message("user"):
+                st.markdown(user_message)
+            with st.chat_message("assistant"):
+                with st.spinner(T["helper_thinking"]):
+                    ai_reply, ai_error = get_ai_chat_response(st.session_state.ai_messages, lang)
+                if ai_reply:
+                    st.markdown(ai_reply)
+                    st.session_state.ai_messages.append({"role": "assistant", "content": ai_reply})
+                elif "OPENAI_API_KEY" in str(ai_error):
+                    st.error("OPENAI_API_KEY is missing from Streamlit Secrets.")
+                else:
+                    st.error(T["ai_unavailable"])
+    st.stop()
 
 # ---------------- HEADER ----------------
 st.html(f'<div class="topbar">{esc(T["disclaimer"])}</div>')
@@ -474,34 +521,9 @@ with right:
     st.html(f'<div dir="{direction}" class="ai-card" style="min-height:230px"><div class="chat-icon">💬</div><div class="ai-title">{esc(T["response"])}</div><div class="ai-copy">{esc(T["response_wait"])}</div></div>')
     st.html(f'<div dir="{direction}" class="section-title" style="margin-top:12px">{esc(T["helper_title"])}</div>')
     st.html(f'<div dir="{direction}" class="section-sub">{esc(T["helper_intro"])}</div>')
-    if st.button(T["helper_close"] if st.session_state.show_ai_chat else T["helper_open"], use_container_width=True, key="ai_helper_btn"):
-        st.session_state.show_ai_chat = not st.session_state.show_ai_chat
-
-    if st.session_state.show_ai_chat:
-        st.html(f'<div dir="{direction}" class="ai-card" style="padding:16px">')
-        if not st.session_state.ai_messages:
-            st.session_state.ai_messages.append({"role": "assistant", "content": T["helper_welcome"]})
-        for message in st.session_state.ai_messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-        user_message = st.chat_input(T["helper_placeholder"], key="ai_chat_input")
-        st.html('</div>')
-        if user_message:
-            user_message = normalize_user_text(user_message)
-            if user_message:
-                st.session_state.ai_messages.append({"role": "user", "content": user_message})
-                with st.chat_message("user"):
-                    st.markdown(user_message)
-                with st.chat_message("assistant"):
-                    with st.spinner(T["helper_thinking"]):
-                        ai_reply, ai_error = get_ai_chat_response(st.session_state.ai_messages, lang)
-                    if ai_reply:
-                        st.markdown(ai_reply)
-                        st.session_state.ai_messages.append({"role": "assistant", "content": ai_reply})
-                    elif "OPENAI_API_KEY" in str(ai_error):
-                        st.error("OPENAI_API_KEY is missing from Streamlit Secrets.")
-                    else:
-                        st.error(T["ai_unavailable"])
+    if st.button(T["helper_open"], use_container_width=True, key="ai_helper_btn"):
+        st.session_state.show_ai_chat = True
+        st.rerun()
 
 # ---------------- ANALYSIS ----------------
 if analyze:
