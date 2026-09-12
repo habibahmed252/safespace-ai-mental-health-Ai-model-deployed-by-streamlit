@@ -4,6 +4,8 @@ import html
 import os
 import re
 import warnings
+import json
+import urllib.request
 from datetime import datetime
 
 import joblib
@@ -33,6 +35,8 @@ for key, default in {
     "support_response": None,
     "show_ai_chat": False,
     "ai_messages": [],
+    "session_id": None,
+    "app_open_logged": False,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -73,14 +77,14 @@ UI = {
         "emergency": "URGENT SUPPORT",
         "emergency_text": "If you may be in immediate danger or having thoughts of suicide, contact local emergency services or a trusted person now. Do not stay alone.",
         "history": "Session History",
-        "history_note": "Previous analyses stay only in this active session and are not intentionally saved to a database or file.",
+        "history_note": "Previous analyses stay visible in this session and are also logged anonymously for app analysis.",
         "view": "View analysis",
         "clear_history": "Clear history",
         "developer": "Chat with Developer",
         "developer_note": "Have feedback, ideas, or a question about SafeSpace AI?",
         "whatsapp": "Chat with Habiba on WhatsApp",
         "footer": "Built with Streamlit · Designed & developed by Eng. Habiba Ahmed Talat",
-        "privacy": "Session-only processing. Your messages are not intentionally stored outside the active session.",
+        "privacy": "Messages and predictions may be logged anonymously for app analysis. No name or email is intentionally collected.",
         "ai_unavailable": "The AI support message is unavailable right now. The practical guidance below is still available.",
         "model_ai": "AI support uses an optional generative model. If no API key is configured, SafeSpace AI uses a built-in supportive fallback instead.",
     },
@@ -91,15 +95,15 @@ UI = {
         "about": "عن SafeSpace AI",
         "about_desc": "أداة لتحليل النصوص باستخدام نموذج تعلم آلي لتحديد الفئة الأقرب للغة الموجودة في الرسالة. النتيجة ليست تشخيصًا طبيًا.",
         "model_section": "About the Model",
-        "input": "اكتبي اللي جواكي",
-        "input_hint": "اكتبي بطريقتك الطبيعية بالعربي أو بالإنجليزي. الأخطاء الإملائية والاختصارات والكتابة العامية وعلامات الترقيم مسموحة.",
-        "placeholder": "اكتبي أفكارك ومشاعرك هنا بحرية...",
+        "input": "اكتب ما يدور في بالك",
+        "input_hint": "اكتب بطريقتك الطبيعية بالعربي أو بالإنجليزي. الأخطاء الإملائية والاختصارات والكتابة العامية وعلامات الترقيم مسموحة.",
+        "placeholder": "اكتب أفكارك ومشاعرك هنا بحرية...",
         "translate": "ترجمة للإنجليزية",
         "translate_done": "تمت الترجمة للإنجليزية — النص جاهز للتحليل بالنموذج.",
-        "translate_error": "الترجمة غير متاحة مؤقتًا. جربي مرة تانية.",
+        "translate_error": "الترجمة غير متاحة مؤقتًا. حاول مرة أخرى.",
         "analyze": "حللي النص",
         "clear": "مسح",
-        "empty": "اكتبي نص الأول.",
+        "empty": "اكتب نصًا أولًا.",
         "processing": "جاري تحليل النص...",
         "detected": "الحالة المتوقعة",
         "confidence": "درجة الثقة",
@@ -108,7 +112,7 @@ UI = {
         "response_wait": "رد داعم بالذكاء الاصطناعي هيظهر هنا بعد التحليل.",
         "helper_title": "مساعدك بالذكاء الاصطناعي",
         "helper_intro": "أنا هنا للاستماع. يمكننا التحدث عن أي شيء يزعجك.",
-        "helper_open": "افتح مساعدك AI",
+        "helper_open": "فتح مساعد AI",
         "helper_close": "رجوع للصفحة الرئيسية",
         "helper_placeholder": "ما الذي يشغل بالك؟",
         "helper_welcome": "أهلًا. أنا هنا للاستماع. يمكننا التحدث عما يزعجك.",
@@ -117,18 +121,18 @@ UI = {
         "selfcare": "خطوات عملية",
         "sources": "إرشادات مبنية على مصادر موثوقة",
         "emergency": "دعم فوري مطلوب",
-        "emergency_text": "لو في خطر فوري أو أفكار انتحارية، كلمي شخص تثقي فيه وخدمات الطوارئ المحلية فورًا، ومتفضليش لوحدك.",
+        "emergency_text": "لو في خطر فوري أو أفكار انتحارية، تواصل مع شخص موثوق وخدمات الطوارئ المحلية فورًا، وتجنب البقاء بمفردك.",
         "history": "سجل الجلسة",
         "history_note": "التحليلات السابقة موجودة داخل الجلسة الحالية فقط ولا يتم حفظها عمدًا في قاعدة بيانات أو ملف.",
         "view": "عرض التحليل",
         "clear_history": "مسح السجل",
-        "developer": "تواصلي مع المطوّرة",
+        "developer": "تواصل مع المطوّرة",
         "developer_note": "عندك ملاحظة أو فكرة أو سؤال عن SafeSpace AI؟",
-        "whatsapp": "تحدثي مع حبيبة على واتساب",
+        "whatsapp": "تحدث مع حبيبة على واتساب",
         "footer": "تم تطويره باستخدام Streamlit · تصميم وتطوير م. حبيبة أحمد طلعت",
-        "privacy": "معالجة داخل الجلسة فقط. لا يتم حفظ رسائلك خارج الجلسة الحالية بشكل مقصود.",
-        "ai_unavailable": "رد الـAI مش متاح دلوقتي، لكن النصائح العملية موجودة تحت.",
-        "model_ai": "رد الـAI بيستخدم موديل توليدي اختياري. لو مفيش API key، التطبيق بيستخدم رد داعم جاهز بدلًا منه.",
+        "privacy": "قد يتم تسجيل الرسائل والنتائج بشكل مجهول لتحليل استخدام التطبيق. لا يتم جمع الاسم أو البريد الإلكتروني بشكل مقصود.",
+        "ai_unavailable": "رد الـAI غير متاح حاليًا، لكن الإرشادات العملية ما زالت موجودة.",
+        "model_ai": "رد الـAI يستخدم نموذجًا توليديًا اختياريًا. إذا لم يتم إعداد API key، يستخدم التطبيق ردًا داعمًا جاهزًا بدلًا منه.",
     },
 }
 
@@ -146,37 +150,37 @@ CLASS_AR = {
 GUIDANCE = {
     "Anxiety": {
         "en": ("Anxiety can feel overwhelming, but small grounding steps can reduce the intensity.", ["Slow your breathing for one minute.", "Use the 5-4-3-2-1 grounding exercise.", "Reduce caffeine if it makes your anxiety worse.", "If anxiety keeps interfering with daily life, consider speaking with a mental-health professional."]),
-        "ar": ("القلق ممكن يبقى تقيل جدًا، بس خطوات صغيرة للتهدئة ممكن تقلل حدته.", ["هدي نفسك وخدي نفس ببطء لمدة دقيقة.", "جربي تمرين 5-4-3-2-1 للـgrounding.", "قللي الكافيين لو بتحسي إنه بيزود القلق.", "لو القلق معطل حياتك بشكل مستمر، فكري تكلمي متخصص صحة نفسية."]),
+        "ar": ("القلق ممكن يكون تقيل جدًا، لكن خطوات صغيرة للتهدئة ممكن تقلل حدته.", ["جرّب تهدئة التنفس لمدة دقيقة.", "جرّب تمرين 5-4-3-2-1 للـgrounding.", "قلّل الكافيين إذا كان يزيد القلق.", "إذا استمر القلق وأثر على الحياة اليومية، اطلب دعمًا من متخصص صحة نفسية."]),
         "sources": ["NIMH — Psychotherapies", "NIMH — Caring for Your Mental Health"],
     },
     "Stress": {
         "en": ("Stress is a signal to pause and identify what is actually under your control.", ["Write down the top three things stressing you.", "Take a short break and return to one small task.", "Protect regular sleep, movement and meals.", "If stress stays intense or disrupts your life, seek professional support."]),
-        "ar": ("التوتر ممكن يكون إشارة إنك محتاجة توقفي وتحددي إيه فعلًا تحت سيطرتك.", ["اكتبي أهم 3 حاجات مضغوطة بسببها.", "خدي بريك صغير وارجعي لمهمة واحدة بس.", "حاولي تحافظي على النوم والحركة والأكل المنتظم.", "لو التوتر شديد ومستمر أو معطل حياتك، اطلبي دعم متخصص."]),
+        "ar": ("التوتر ممكن يكون إشارة للتوقف وتحديد ما هو فعلًا تحت السيطرة.", ["اكتب أهم 3 أشياء تسبب الضغط.", "خذ استراحة قصيرة وارجع لمهمة واحدة فقط.", "حافظ قدر الإمكان على النوم والحركة والأكل المنتظم.", "إذا كان التوتر شديدًا ومستمرًا أو يعطل الحياة، اطلب دعمًا متخصصًا."]),
         "sources": ["WHO — Doing What Matters in Times of Stress", "NIMH — Caring for Your Mental Health"],
     },
     "Depression": {
         "en": ("Feeling low does not mean you have to handle everything alone. Tiny actions and human connection matter.", ["Pick one very small task for today.", "Get some daylight and gentle movement if you can.", "Message someone you trust instead of isolating yourself.", "If symptoms persist or affect daily life, talk with a qualified professional."]),
-        "ar": ("الإحساس التقيل مش معناه إنك لازم تشيلي كل حاجة لوحدك. الخطوات الصغيرة والتواصل مع الناس مهمين.", ["اختاري مهمة صغيرة جدًا تعمليها النهارده.", "اتعرضي شوية لضوء النهار وحاولي تتحركي حركة بسيطة.", "ابعتي لشخص تثقي فيه بدل ما تعزلي نفسك.", "لو الأعراض مستمرة أو مأثرة على حياتك، كلمي متخصص مؤهل."]),
+        "ar": ("الإحساس التقيل لا يعني ضرورة التعامل مع كل شيء بمفردك. الخطوات الصغيرة والتواصل مع الآخرين مهمان.", ["اختر مهمة صغيرة جدًا لليوم.", "تعرّض لبعض ضوء النهار وحاول القيام بحركة بسيطة.", "تواصل مع شخص موثوق بدلًا من العزلة.", "إذا استمرت الأعراض أو أثرت على الحياة، تحدث مع متخصص مؤهل."]),
         "sources": ["WHO — Depression", "NIMH — My Mental Health: Do I Need Help?"],
     },
     "Bipolar": {
         "en": ("This model label is not a diagnosis. Consistent routines and professional care are especially important when mood changes are significant.", ["Keep sleep, meals and daily activities as regular as possible.", "Track noticeable mood and sleep changes.", "Take prescribed treatment as directed and keep appointments.", "Avoid alcohol or drugs if they worsen mood or sleep."]),
-        "ar": ("دي فئة في النموذج وليست تشخيصًا. انتظام الروتين والرعاية المتخصصة مهمين خصوصًا مع التغيرات الكبيرة في المزاج.", ["حافظي قدر الإمكان على انتظام النوم والأكل والروتين.", "سجلي التغيرات الواضحة في المزاج والنوم.", "التزمي بالعلاج الموصوف ومواعيد المتابعة.", "ابعدي عن الكحول أو المخدرات لو بتزود مشاكل المزاج أو النوم."]),
+        "ar": ("دي فئة في النموذج وليست تشخيصًا. انتظام الروتين والرعاية المتخصصة مهمان خصوصًا مع التغيرات الكبيرة في المزاج.", ["حافظ قدر الإمكان على انتظام النوم والأكل والروتين.", "سجل التغيرات الواضحة في المزاج والنوم.", "التزم بالعلاج الموصوف ومواعيد المتابعة.", "تجنب الكحول أو المخدرات إذا كانت تزيد مشاكل المزاج أو النوم."]),
         "sources": ["NIMH — Bipolar Disorder"],
     },
     "Personality disorder": {
         "en": ("This is a model category, not a diagnosis. Skills that improve emotional regulation and relationships can be useful with professional guidance.", ["Notice emotional triggers without judging yourself.", "Pause before reacting when emotions are intense.", "Practice grounding or mindfulness skills.", "Consider evidence-based psychotherapy; DBT is one approach used for borderline personality disorder."]),
-        "ar": ("دي فئة من النموذج ومش تشخيص. مهارات تنظيم المشاعر والعلاقات ممكن تساعد مع التوجيه المتخصص.", ["لاحظي الحاجات اللي بتشغّل مشاعرك من غير ما تلومي نفسك.", "خدي وقفة قبل رد الفعل وقت الانفعال الشديد.", "جربي مهارات الـgrounding أو الـmindfulness.", "فكري في العلاج النفسي المبني على الدليل؛ DBT من الأساليب المستخدمة في اضطراب الشخصية الحدّية."]),
+        "ar": ("دي فئة من النموذج ومش تشخيص. مهارات تنظيم المشاعر والعلاقات ممكن تساعد مع التوجيه المتخصص.", ["لاحظ المحفزات العاطفية بدون لوم النفس.", "خذ وقفة قبل رد الفعل وقت الانفعال الشديد.", "جرّب مهارات الـgrounding أو الـmindfulness.", "فكر في العلاج النفسي المبني على الدليل؛ DBT من الأساليب المستخدمة في اضطراب الشخصية الحدّية."]),
         "sources": ["NIMH — Borderline Personality Disorder"],
     },
     "Normal": {
         "en": ("The model did not find strong evidence for one of the other categories in this message. That does not measure your overall mental health.", ["Keep routines that support your wellbeing.", "Stay connected with people you trust.", "Notice what helps you feel balanced.", "Ask for help whenever your wellbeing changes or you feel overwhelmed."]),
-        "ar": ("النموذج ما لاقاش دليل قوي على واحدة من الفئات التانية في الرسالة دي، وده مش مقياس لصحتك النفسية بشكل عام.", ["حافظي على العادات اللي بتدعم راحتك.", "خلي التواصل مع الناس الموثوقين موجود.", "خدي بالك من الحاجات اللي بتخليكي متوازنة.", "اطلبي مساعدة لو حالتك النفسية اتغيرت أو حسيتي إنك مش قادرة."]),
+        "ar": ("النموذج ما لاقاش دليل قوي على واحدة من الفئات التانية في الرسالة دي، وده مش مقياس للصحة النفسية بشكل عام.", ["حافظ على العادات التي تدعم الراحة.", "حافظ على التواصل مع أشخاص موثوقين.", "لاحظ ما يساعد على التوازن.", "اطلب مساعدة إذا تغيرت الحالة النفسية أو أصبح التعامل معها صعبًا."]),
         "sources": ["NIMH — Caring for Your Mental Health"],
     },
     "Suicidal": {
         "en": ("This result needs caution. A text classifier cannot determine whether you are safe. If you might act on suicidal thoughts, get human help now.", ["Tell a trusted person exactly what is happening and stay with them.", "Move away from medicines, weapons or other means you could use to hurt yourself.", "Contact local emergency or crisis services if danger is immediate.", "A mental-health professional can help create a safety plan and connect you with treatment."]),
-        "ar": ("النتيجة دي محتاجة حذر شديد. نموذج النصوص مش يقدر يحدد إذا كنتِ بأمان. لو ممكن تتصرفي بناءً على أفكار انتحارية، اطلبي مساعدة بشرية دلوقتي.", ["قولي لشخص تثقي فيه بوضوح إيه اللي بيحصل وخليكي معاه.", "ابعدي عن الأدوية أو الأسلحة أو أي وسيلة ممكن تستخدميها لإيذاء نفسك.", "لو الخطر قريب، تواصلي فورًا مع الطوارئ أو خدمات الأزمات المحلية.", "متخصص الصحة النفسية يقدر يساعد في عمل safety plan وتوصيلك للعلاج المناسب."]),
+        "ar": ("النتيجة دي محتاجة حذر شديد. نموذج النصوص مش يقدر يحدد مستوى الأمان. لو فيه احتمال للتصرف بناءً على أفكار انتحارية، اطلب مساعدة بشرية فورًا.", ["أخبر شخصًا موثوقًا بوضوح بما يحدث وابقَ معه.", "ابتعد عن الأدوية أو الأسلحة أو أي وسيلة يمكن استخدامها لإيذاء النفس.", "إذا كان الخطر قريبًا، تواصل فورًا مع الطوارئ أو خدمات الأزمات المحلية.", "متخصص الصحة النفسية يمكنه المساعدة في وضع safety plan وربطك بالعلاج المناسب."]),
         "sources": ["WHO — Suicide", "NIMH — 5 Action Steps to Help Someone Having Thoughts of Suicide"],
     },
 }
@@ -270,6 +274,50 @@ def run_prediction(raw_text: str):
     }
 
 
+def get_google_logs_webhook():
+    """Return the Google Apps Script webhook URL from Streamlit Secrets."""
+    try:
+        return st.secrets.get("GOOGLE_SHEETS_WEBHOOK_URL")
+    except Exception:
+        return os.getenv("GOOGLE_SHEETS_WEBHOOK_URL")
+
+
+def get_session_id():
+    """Create one anonymous session ID for the current browser session."""
+    if not st.session_state.get("session_id"):
+        import uuid
+        st.session_state.session_id = uuid.uuid4().hex
+    return st.session_state.session_id
+
+
+def log_to_google_sheets(log_type, data):
+    """Send an anonymous app event to the Google Sheets webhook without blocking the app."""
+    webhook = get_google_logs_webhook()
+    if not webhook:
+        return
+
+    payload = {
+        "type": log_type,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "session_id": get_session_id(),
+        **data,
+    }
+
+    try:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request = urllib.request.Request(
+            webhook,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:
+            response.read()
+    except Exception:
+        # Logging must never break the main application.
+        pass
+
+
 def get_openai_key():
     key = os.getenv("OPENAI_API_KEY")
     if key:
@@ -285,13 +333,13 @@ def generate_ai_support(user_text: str, prediction: str, lang: str):
     # sending the text to a generative model.
     if prediction == "Suicidal":
         if lang == "ar":
-            return "أنا واخدة كلامك بجد. لو في احتمال إنك تأذي نفسك دلوقتي، متفضليش لوحدك: كلمي شخص تثقي فيه وخليه يفضل معاكي، وابعدي عن أي وسيلة ممكن تأذي نفسك بيها، واتصلي بالطوارئ أو خدمة أزمات محلية فورًا."
+            return "أنا آخذ كلامك بجدية. لو في احتمال لإيذاء النفس الآن، تواصل فورًا مع شخص موثوق ولا تبقَ بمفردك، وابتعد عن أي وسيلة قد تسبب الأذى، واتصل بالطوارئ أو خدمة أزمات محلية."
         return "I’m taking what you wrote seriously. If you might hurt yourself now, please do not stay alone: contact someone you trust, stay with them, move away from anything you could use to hurt yourself, and contact local emergency or crisis services immediately."
 
     key = get_openai_key()
     if OpenAI is None or not key:
         if lang == "ar":
-            return "خدي النتيجة كإشارة مش كحكم نهائي. ركزي دلوقتي على خطوة صغيرة تقدري تعمليها، ولو الإحساس ده مستمر أو مأثر على حياتك، كلمي شخص تثقي فيه أو متخصص."
+            return "خذ النتيجة كإشارة وليست حكمًا نهائيًا. ركز على خطوة صغيرة يمكن القيام بها الآن، وإذا استمر هذا الشعور أو أثر على الحياة اليومية، تواصل مع شخص موثوق أو متخصص."
         return "Take the result as a signal, not a final judgment. Focus on one small step you can take right now, and if these feelings persist or affect your daily life, talk to someone you trust or a qualified professional."
 
     try:
@@ -362,6 +410,11 @@ lang = st.session_state.language
 T = UI[lang]
 dark = st.session_state.theme == "dark"
 direction = "rtl" if lang == "ar" else "ltr"
+# Log one anonymous app-open event per browser session.
+if not st.session_state.get("app_open_logged"):
+    log_to_google_sheets("app_event", {"event": "app_open", "language": lang})
+    st.session_state.app_open_logged = True
+
 if dark:
     colors = {"bg":"#070D16","surface":"#0D1726","surface2":"#111F32","input":"#0A1422","text":"#F4F8FC","muted":"#9EADBF","line":"#253A52","navy":"#FFFFFF","accent_bg":"#10263A"}
 else:
@@ -426,6 +479,11 @@ if st.session_state.show_ai_chat:
         user_message = normalize_user_text(user_message)
         if user_message:
             st.session_state.ai_messages.append({"role": "user", "content": user_message})
+            log_to_google_sheets("chat", {
+                "language": lang,
+                "role": "user",
+                "message": user_message,
+            })
             with st.chat_message("user"):
                 st.markdown(user_message)
             with st.chat_message("assistant"):
@@ -434,6 +492,11 @@ if st.session_state.show_ai_chat:
                 if ai_reply:
                     st.markdown(ai_reply)
                     st.session_state.ai_messages.append({"role": "assistant", "content": ai_reply})
+                    log_to_google_sheets("chat", {
+                        "language": lang,
+                        "role": "assistant",
+                        "message": ai_reply,
+                    })
                 elif "OPENAI_API_KEY" in str(ai_error):
                     st.error("OPENAI_API_KEY is missing from Streamlit Secrets.")
                 else:
@@ -523,6 +586,7 @@ with right:
     st.html(f'<div dir="{direction}" class="section-sub">{esc(T["helper_intro"])}</div>')
     if st.button(T["helper_open"], use_container_width=True, key="ai_helper_btn"):
         st.session_state.show_ai_chat = True
+        log_to_google_sheets("app_event", {"event": "open_ai_helper", "language": lang})
         st.rerun()
 
 # ---------------- ANALYSIS ----------------
@@ -537,6 +601,14 @@ if analyze:
             st.session_state.results=result
             st.session_state.support_response=generate_ai_support(raw_text,result["prediction"],lang)
             save_history(raw_text,result)
+            log_to_google_sheets("prediction", {
+                "language": lang,
+                "input_text": raw_text,
+                "english_text": result.get("english_text", ""),
+                "prediction": result.get("prediction", ""),
+                "confidence": result.get("confidence", 0),
+                "probabilities": json.dumps(result.get("probabilities", {}), ensure_ascii=False),
+            })
         except RuntimeError as exc:
             if str(exc)=="translation_unavailable": st.error(T["translate_error"])
             else: st.error("The analysis service is temporarily unavailable.")
